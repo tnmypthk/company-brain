@@ -1,0 +1,9 @@
+cb-env/
+.DS_Store
+.env
+token.json
+credentials.json
+data/chroma/
+__pycache__/
+*.pyc
+.pytest_cache/

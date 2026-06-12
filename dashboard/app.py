@@ -1,14 +1,11 @@
 """
 Company Brain — Streamlit dashboard.
 
-Three tabs:
+Four tabs:
   Ingest  — drag & drop PDF/DOCX files into ChromaDB
   Query   — semantic search across everything stored
+  Skills  — generate structured process YAML files using Claude API (RAG)
   Stats   — what's in the DB right now
-
-Why Streamlit? It turns Python functions into a web UI with almost no boilerplate.
-st.file_uploader() gives you bytes in memory — that's why we built ingest_file_bytes()
-yesterday instead of only supporting file paths.
 """
 
 import streamlit as st
@@ -22,7 +19,7 @@ st.set_page_config(
 st.title("🧠 Company Brain")
 st.caption("Ingest company knowledge. Query it with natural language.")
 
-ingest_tab, query_tab, stats_tab = st.tabs(["📥 Ingest", "🔍 Query", "📊 Stats"])
+ingest_tab, query_tab, skills_tab, stats_tab = st.tabs(["📥 Ingest", "🔍 Query", "🗂 Skills", "📊 Stats"])
 
 
 # ── INGEST TAB ────────────────────────────────────────────────────────────────
@@ -154,6 +151,79 @@ with query_tab:
                 with st.expander(f"Result {i} — {source} (chunk {chunk_idx}) — {relevance}% relevant"):
                     st.progress(relevance)
                     st.write(r["text"])
+
+
+# ── SKILLS TAB ────────────────────────────────────────────────────────────────
+with skills_tab:
+    st.header("Skills File Generator")
+    st.write(
+        "Describe a process in plain English. Claude will retrieve the most relevant "
+        "knowledge chunks and extract a structured, reusable skills file."
+    )
+
+    topic = st.text_input(
+        "What process do you want to document?",
+        placeholder="e.g. how do we handle customer refunds",
+    )
+
+    col1, col2 = st.columns([1, 3])
+    n_chunks = col1.slider("Chunks to retrieve", min_value=3, max_value=15, value=10)
+
+    # Session state holds the last generated result so the Save button works
+    # without re-running the expensive Claude API call.
+    # Why session_state? Streamlit re-runs the entire script on every interaction.
+    # Without session_state, clicking "Save" would lose the generated result from
+    # the "Generate" button click.
+    if "last_generated" not in st.session_state:
+        st.session_state.last_generated = None
+
+    if st.button("Generate Skills File", type="primary", disabled=not topic):
+        from agents.extractor import extract_process
+        from agents.skills_writer import process_to_yaml
+
+        with st.spinner(f"Retrieving chunks and calling Claude API..."):
+            try:
+                process = extract_process(topic, n_chunks=n_chunks)
+                st.session_state.last_generated = process
+            except Exception as e:
+                st.error(f"Error: {e}")
+                st.session_state.last_generated = None
+
+    if st.session_state.last_generated:
+        from agents.skills_writer import process_to_yaml, save_skills_file
+
+        process = st.session_state.last_generated
+        yaml_str = process_to_yaml(process)
+
+        st.divider()
+        conf = process.get("confidence", "low")
+        conf_color = {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(conf, "⚪")
+        st.write(f"**{process.get('display_name', process['process'])}** — Confidence: {conf_color} {conf.upper()}")
+
+        st.code(yaml_str, language="yaml")
+
+        if st.button("💾 Save Skills File"):
+            path = save_skills_file(process)
+            st.success(f"Saved to {path}")
+            st.session_state.last_generated = None
+
+    # ── Saved skills library ──
+    st.divider()
+    st.subheader("Saved Skills Library")
+
+    from agents.skills_writer import list_skills_files
+    saved = list_skills_files()
+
+    if not saved:
+        st.info("No skills files saved yet. Generate and save one above.")
+    else:
+        for skill in saved:
+            conf = skill["confidence"]
+            conf_color = {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(conf, "⚪")
+            with st.expander(f"{conf_color} {skill['display_name']} — owned by {skill['owner']}"):
+                st.caption(f"Generated: {skill['generated_at']}  |  File: {skill['filename']}")
+                content = skill["path"].read_text(encoding="utf-8")
+                st.code(content, language="yaml")
 
 
 # ── STATS TAB ─────────────────────────────────────────────────────────────────

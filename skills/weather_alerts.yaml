@@ -1,0 +1,62 @@
+process: weather_alerts
+display_name: Courier Weather Risk Alert Process
+owner: Delivery Operations / bolt-webhooks automation
+trigger: Automated n8n workflow detects adverse weather conditions (via Open-Meteo
+  48-hour forecast) across monitored cities that meet or exceed configured severity
+  thresholds (HEADS_UP / WARNING / URGENT)
+steps:
+- 1. n8n workflow polls Open-Meteo API for 48-hour weather forecasts across monitored
+  cities (Tallinn, Lisbon, Warsaw, Lagos)
+- 2. Rule-based engine evaluates temperature, precipitation, wind speed, and WMO weather
+  codes against city-calibrated severity thresholds to assign severity level (HEADS_UP
+  / WARNING / URGENT)
+- 3. Check the 6-hour deduplication gate per city; if a matching alert was already
+  sent within the window, suppress this one
+- 4. GPT-4o-mini synthesises weather parameters into a human-readable operational
+  impact summary and recommended actions; if the LLM call fails, fall back to raw
+  weather data
+- '5. Post a formatted Slack alert to the #weather-alerts channel including: city
+  name, severity level, weather status, operational impact, and recommended actions'
+- 6. Operations team reviews the Slack alert and notifies affected couriers of current
+  conditions and safety guidance
+- '7. Instruct couriers to take severity-appropriate action: adjust ETAs and exercise
+  caution (HEADS_UP/WARNING), stay hydrated in heat, or temporarily halt deliveries
+  (URGENT)'
+- 8. Operations monitors delivery performance and courier check-ins in the affected
+  city until conditions normalise
+- 9. Send proactive customer communications about potential delays or service interruptions
+  in affected areas
+edge_cases:
+- LLM (GPT-4o-mini) call fails — system automatically falls back to raw weather data
+  for alert generation
+- Thunderstorms or unsafe conditions in a city (e.g., Lagos) — deliveries may be temporarily
+  halted in affected areas rather than just delayed
+- Heat-related fatigue risk (e.g., Tallinn high temperatures) — courier well-being
+  monitoring is triggered in addition to ETA adjustments
+- Deduplication gate prevents repeated alerts for the same city within a 6-hour window
+  to avoid alert fatigue
+- Multiple severity levels may be active simultaneously across different cities requiring
+  parallel responses
+- Open-Meteo API is unreachable or returns incomplete data — handling not specified
+  in draft (flagged for review)
+sources:
+- slack:weather-alerts (chunk 0)
+- slack:weather-alerts (chunk 1)
+- slack:weather-alerts (chunk 2 — index 0)
+- slack:weather-alerts (chunk 1 — index 1)
+- /Users/tanmaypathak/Downloads/Tanmay_Pathak_AI_Engineer_Resume.pdf (chunk 10)
+generated_at: '2026-06-12T11:12:37.102383'
+confidence: medium
+validation_notes:
+- Steps 1–5 (the automated pipeline) are concrete and well-sourced from the Slack
+  channel; left largely verbatim with minor actionability edits to steps 3, 4, and
+  5.
+- 'Rewrote steps 8–9 — ''monitored in real-time'' and ''prepared and sent'' were vague;
+  tightened steps 6–7 into role-specific actions. Note: steps 6–9 (manual ops response)
+  appear inferred and may not be explicitly documented in sources.'
+- Added an Open-Meteo API failure edge case as an obvious gap; flagged that the draft
+  does not specify how it is handled, so do not assume a fallback exists.
+- Owner names a specific team plus the automation; kept as-is since it is identifiable.
+- 'Lowered confidence from high to medium: one source is an unrelated resume PDF,
+  and the operational steps required inference/rewriting rather than direct sourcing.'
+validated_at: '2026-06-12T11:13:02.949709'

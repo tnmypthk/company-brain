@@ -46,6 +46,14 @@ def process_to_yaml(process: dict[str, Any]) -> str:
         "confidence": process.get("confidence", "low"),
     }
 
+    # Validator fields (Day 4) — only present on dicts that went through the
+    # 2-agent pipeline. Added conditionally so pre-validator skills files and
+    # unvalidated drafts still serialize cleanly.
+    if "validation_notes" in process:
+        ordered["validation_notes"] = process["validation_notes"]
+    if "validated_at" in process:
+        ordered["validated_at"] = process["validated_at"]
+
     return yaml.dump(
         ordered,
         default_flow_style=False,   # block style (human-readable), not inline

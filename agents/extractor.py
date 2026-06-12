@@ -43,30 +43,57 @@ def _get_client():
     return anthropic.Anthropic(api_key=api_key)
 
 
+# ── OUTPUT SCHEMA ──────────────────────────────────────────────────────────────
+#
+# Day 4 fix: the original version asked for JSON in the prompt ("respond with
+# ONLY valid JSON") and parsed with json.loads — which broke the first time
+# Claude wrapped the JSON in ```json fences. Prompt-level format instructions
+# are suggestions; the model usually follows them, until it doesn't.
+#
+# Structured outputs (output_config.format) move the contract into the API:
+# the response is *guaranteed* to be schema-valid JSON. Same upgrade the
+# validator (agents/validator.py) uses.
+#
+EXTRACTED_PROCESS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "process": {"type": "string"},
+        "display_name": {"type": "string"},
+        "owner": {"type": "string"},
+        "trigger": {"type": "string"},
+        "steps": {"type": "array", "items": {"type": "string"}},
+        "edge_cases": {"type": "array", "items": {"type": "string"}},
+        "sources": {"type": "array", "items": {"type": "string"}},
+        "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+    },
+    "required": ["process", "display_name", "owner", "trigger", "steps",
+                 "edge_cases", "sources", "confidence"],
+    "additionalProperties": False,
+}
+
+
 # ── PROMPT DESIGN ──────────────────────────────────────────────────────────────
 #
-# The system prompt defines Claude's role and output contract.
+# The system prompt defines Claude's role and field semantics.
 # Separating role (system) from task (user) is a best practice because:
 #   - The system prompt is cached by Anthropic (cost savings on repeated calls)
 #   - It keeps the user prompt clean and focused on the specific task
-#   - It lets you swap the user prompt without re-explaining the output format
+#
+# Note the prompt no longer says anything about JSON formatting — the schema
+# handles format. The prompt's job is now purely *semantics*: what each field
+# should contain and how to judge confidence.
 #
 SYSTEM_PROMPT = """You are a business process analyst. Your job is to read retrieved
 knowledge chunks and extract a structured, actionable process definition.
 
-You must respond with ONLY valid JSON — no markdown, no explanation, no preamble.
-The JSON must match this exact schema:
-
-{
-  "process": "snake_case_process_name",
-  "display_name": "Human Readable Process Name",
-  "owner": "team or role who owns this process (infer from context, or 'unknown')",
-  "trigger": "what event or condition starts this process",
-  "steps": ["step 1", "step 2", "step 3"],
-  "edge_cases": ["exception or special case 1", "exception 2"],
-  "sources": ["source_name (chunk N)", "source_name (chunk M)"],
-  "confidence": "high | medium | low"
-}
+Field guidance:
+- process: snake_case_process_name
+- display_name: Human Readable Process Name
+- owner: team or role who owns this process (infer from context, or 'unknown')
+- trigger: what event or condition starts this process
+- steps: ordered, actionable steps
+- edge_cases: exceptions or special cases
+- sources: cite as "source_name (chunk N)"
 
 Confidence rubric:
   high   — multiple chunks with consistent, detailed steps
@@ -151,30 +178,26 @@ def extract_process(topic: str, n_chunks: int = 10) -> dict[str, Any]:
     # conversations, system prompts, and is what all current Claude models use.
     response = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=1024,
+        # 1024 was too tight — a 7-step process with detailed edge cases runs
+        # ~800+ tokens, and hitting max_tokens truncates the JSON mid-object.
+        max_tokens=4096,
+        # API-enforced output contract — see EXTRACTED_PROCESS_SCHEMA above.
+        output_config={
+            "format": {
+                "type": "json_schema",
+                "schema": EXTRACTED_PROCESS_SCHEMA,
+            }
+        },
         system=SYSTEM_PROMPT,
         messages=[
             {"role": "user", "content": _build_user_prompt(topic, chunks)}
         ],
     )
 
-    raw_text = response.content[0].text.strip()
-
-    # Parse the JSON Claude returned
-    # We validate it has the required keys before passing it downstream.
-    # If Claude returns malformed JSON (rare but possible), we surface a clear error.
-    try:
-        result = json.loads(raw_text)
-    except json.JSONDecodeError as e:
-        raise ValueError(
-            f"Claude returned non-JSON output. Raw response:\n{raw_text}\nError: {e}"
-        )
-
-    required_keys = {"process", "display_name", "owner", "trigger", "steps",
-                     "edge_cases", "sources", "confidence"}
-    missing = required_keys - set(result.keys())
-    if missing:
-        raise ValueError(f"Claude's response missing keys: {missing}. Got: {result}")
+    # With output_config.format the text block is guaranteed valid JSON
+    # matching the schema — no fence-stripping, no missing-key checks.
+    raw_text = next(b.text for b in response.content if b.type == "text")
+    result = json.loads(raw_text)
 
     result["generated_at"] = datetime.now().isoformat()
 

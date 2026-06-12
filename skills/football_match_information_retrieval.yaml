@@ -1,0 +1,46 @@
+process: football_match_information_retrieval
+display_name: Football Match Information Retrieval
+owner: unknown
+trigger: User submits a query asking for information about a specific football match
+steps:
+- Identify the specific football match being referenced, asking the user for clarifying
+  details (teams, date, competition) if ambiguous (inferred — not found in knowledge
+  base)
+- Retrieve match details such as teams, date, venue, and final score (inferred — not
+  found in knowledge base)
+- Summarize key match events including goals, cards, and decisive moments (inferred
+  — not found in knowledge base)
+- Present the compiled findings to the user in a clear response (inferred — not found
+  in knowledge base)
+edge_cases:
+- Query refers to multiple matches and requires disambiguation before retrieval (inferred
+  — not found in knowledge base)
+- No match data is available for the requested fixture (inferred — not found in knowledge
+  base)
+- Match is upcoming/not yet played so no score or events exist (inferred — not found
+  in knowledge base)
+sources:
+- gmail:Welcome to Looker Studio (chunk 1) — not relevant
+- gmail:Your Snowflake trial is ending soon (chunk 2) — not relevant
+- gmail:Security alert (chunk 3) — not relevant
+- C-GENBTC-B-m4-l1-en-file-9.en.pdf (chunk 4) — not relevant
+- drive:credit_card_fraud (chunks 5-9) — not relevant
+- gmail:Security alert (chunk 10) — not relevant
+generated_at: '2026-06-12T10:50:07.368896'
+confidence: low
+validation_notes:
+- 'CRITICAL: All listed sources are marked ''not relevant'' and every step/edge case
+  is labeled ''inferred'' — this process has no support in the provided knowledge
+  base and may not be a real documented process. Recommend verifying it should exist
+  at all before use.'
+- Steps left as inferred but clarified — added disambiguation prompt to step 1 and
+  specified the response format in step 4; kept 'inferred' tags since none are sourced.
+- 'Edge cases: removed the meta-note ''all steps are inferred'' (not an operational
+  edge case), kept the disambiguation case, and added realistic ''no data available''
+  and ''upcoming match'' cases — all still inferred.'
+- Owner left as 'unknown' — no source identifies a responsible team or role.
+- Trigger lightly expanded but remains close to a restatement of the process name;
+  no concrete triggering system or event is identifiable from the draft.
+- Confidence kept at 'low' — heavy inference and zero relevant sourcing fully justify
+  it.
+validated_at: '2026-06-12T10:50:21.496588'

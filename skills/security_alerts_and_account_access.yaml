@@ -1,42 +1,56 @@
 process: security_alerts_and_account_access
-display_name: Security Alerts and Account Access
+display_name: Security Alerts and Account Access Management
 owner: Google Account Security Team (inferred)
-trigger: A notable account event occurs, such as a new passkey being added, a new
-  sign-in from an unrecognized device, a third-party app being granted account access,
-  or account settings being automatically changed by Google
+trigger: A security-relevant event occurs on a Google Account, such as a new sign-in,
+  a new passkey being added, or a third-party application being granted data access
 steps:
-- Google detects a security-relevant account event (e.g., new passkey added, new device
-  sign-in, third-party app access granted, account settings changed)
-- Google sends an automated security alert email to the account holder at the registered
-  email address (tpsnowflake1611@gmail.com)
-- Email describes the specific event that occurred and identifies potential risk if
-  the account holder did not initiate the action
-- Email provides a 'Check activity' link directing the user to their Google Account
-  security notifications page (myaccount.google.com/notifications)
-- User reviews the activity by clicking the provided link or visiting myaccount.google.com/notifications
-- If the user did not initiate the action, they follow the 'secure your account' flow
-  provided in the alert email
-- If third-party app access was granted without authorization, user navigates to Google
-  Account connections settings to revoke access
-- If account settings were automatically changed (e.g., SafeSearch, personalized ads,
-  Timeline), user may verify their age or manually adjust settings via myaccount.google.com/check-settings
+- Google detects a security-relevant account event (e.g., new sign-in on a new device,
+  new passkey added, or third-party app access granted)
+- Google sends an automated security alert email to the account holder (tpsnowflake1611@gmail.com)
+  notifying them of the specific event
+- The alert email presents the event details (device type, action taken, app name)
+  and a direct 'Check activity' link to the Google Account security page
+- Account holder reviews the activity via the provided link or at https://myaccount.google.com/notifications
+- Before acting, account holder verifies the alert is genuine (sender is google.com,
+  links point to myaccount.google.com) to rule out phishing
+- If the activity was authorized, account holder takes no further action
+- If the activity was NOT authorized, account holder clicks 'Check and secure your
+  account' to initiate account recovery and lockdown (review devices, change password)
+- For third-party app access (e.g., Snowflake Connector for Google Data Studio), account
+  holder reviews and, if unwanted, revokes permissions via the Google Account connections
+  overview
 edge_cases:
-- Google cannot confirm the user is an adult, resulting in automatic restrictive setting
-  changes (SafeSearch on, personalized ads off, Timeline off) — user must verify age
-  to restore preferred settings
-- A new passkey is added without the user's knowledge, indicating potential unauthorized
-  account access
-- A third-party connector (e.g., Snowflake Connector for Google Data Studio) is granted
-  access to account data without the user's explicit authorization
-- Sign-in occurs from an unrecognized device or platform (e.g., Mac) that the user
-  does not recognize
-- User does not act on the alert, leaving a potentially compromised account unsecured
-  (inferred)
+- Account holder did not perform the action (unauthorized sign-in or passkey addition)
+  — requires immediate account securing via the alert link
+- Third-party app access was not authorized by the account holder — permissions must
+  be revoked via Google Account settings
+- Google cannot confirm account holder is an adult, triggering automatic restrictive
+  setting changes (SafeSearch on, personalized ads off, Timeline off) requiring age
+  verification to reverse
+- Account holder does not respond to the security alert, leaving a potential unauthorized
+  access unaddressed
+- The 'security alert' is itself a phishing attempt impersonating Google — account
+  holder should not click links and should navigate to myaccount.google.com directly
 sources:
 - gmail:Security alert (chunk 1)
 - gmail:Security alert (chunk 2)
 - gmail:Security alert (chunk 4)
-- gmail:Google updated your settings (chunk 5)
-- gmail:Check your Google Account privacy settings (chunk 3)
-generated_at: '2026-06-12T10:08:25.376385'
+- gmail:Google updated your settings (chunk 6)
+generated_at: '2026-06-12T10:46:06.137314'
 confidence: medium
+validation_notes:
+- This 'process' is reconstructed from Google notification emails rather than a documented
+  procedure; steps reflect the alert-review-secure flow those emails describe.
+- Added a phishing-verification step and edge case — an obvious omission for any security-alert
+  process; flagged here since not explicitly drawn from the source emails.
+- Split step 6 to clarify the account-securing actions (review devices, change password)
+  implied by 'Check and secure your account'.
+- 'Owner is ambiguous: detection/alerting is owned by Google, but steps 4-8 are performed
+  by the account holder. Left the inferred Google Account Security Team but could
+  not verify from sources.'
+- Age-verification edge case is supported only by the 'Google updated your settings'
+  source and is tangential to the core sign-in/access alert flow; kept but noted as
+  loosely related.
+- Confidence kept at medium — sources are consistent on the core flow but owner and
+  process framing required inference.
+validated_at: '2026-06-12T10:46:30.892128'

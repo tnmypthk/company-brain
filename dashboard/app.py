@@ -2,9 +2,9 @@
 Company Brain — Streamlit dashboard.
 
 Four tabs:
-  Ingest  — drag & drop PDF/DOCX files into ChromaDB
+  Ingest  — drag & drop PDF/DOCX files, Google Drive, Gmail, or Slack into ChromaDB
   Query   — semantic search across everything stored
-  Skills  — generate structured process YAML files using Claude API (RAG)
+  Skills  — 2-agent pipeline (extractor → validator) producing process YAML files
   Stats   — what's in the DB right now
 """
 
@@ -112,6 +112,47 @@ with ingest_tab:
                 except Exception as e:
                     st.error(f"Error: {e}")
 
+    st.divider()
+
+    # Slack section
+    st.subheader("Or ingest from Slack")
+    st.write(
+        "Needs a bot token (`xoxb-...`) with `channels:read`, `channels:history`, "
+        "and `users:read` scopes — and the bot must be invited to each channel."
+    )
+
+    # type="password" masks the token on screen. We pass it straight to the
+    # ingestor and never write it to disk; set SLACK_BOT_TOKEN in .env to
+    # skip typing it each time.
+    import os
+    slack_token = st.text_input(
+        "Bot token",
+        type="password",
+        placeholder="xoxb-... (leave empty to use SLACK_BOT_TOKEN from .env)",
+    )
+    slack_channels = st.text_input(
+        "Channel names (comma-separated)",
+        placeholder="e.g. engineering, customer-support",
+    )
+    slack_days = st.slider("Days of history", min_value=7, max_value=365, value=90, key="slack_days")
+
+    if st.button("Ingest Slack", disabled=not slack_channels):
+        from ingestion.slack import ingest_slack
+        from storage.chroma import store_chunks
+
+        channels = [c.strip() for c in slack_channels.split(",") if c.strip()]
+        with st.spinner(f"Fetching {slack_days} days from {len(channels)} channel(s)..."):
+            try:
+                chunks = ingest_slack(
+                    channels,
+                    token=slack_token or os.getenv("SLACK_BOT_TOKEN"),
+                    days=slack_days,
+                )
+                stored = store_chunks(chunks)
+                st.success(f"✓ {stored} chunks stored from Slack")
+            except Exception as e:
+                st.error(f"Error: {e}")
+
 
 # ── QUERY TAB ─────────────────────────────────────────────────────────────────
 with query_tab:
@@ -174,38 +215,84 @@ with skills_tab:
     # Why session_state? Streamlit re-runs the entire script on every interaction.
     # Without session_state, clicking "Save" would lose the generated result from
     # the "Generate" button click.
+    # Two slots: the extractor's draft and the validator's improved version.
+    # Both are kept so we can render them side by side — seeing the diff is
+    # how a human learns to trust (or distrust) the pipeline.
     if "last_generated" not in st.session_state:
         st.session_state.last_generated = None
+    if "last_validated" not in st.session_state:
+        st.session_state.last_validated = None
 
     if st.button("Generate Skills File", type="primary", disabled=not topic):
         from agents.extractor import extract_process
-        from agents.skills_writer import process_to_yaml
+        from agents.validator import validate_process
 
-        with st.spinner(f"Retrieving chunks and calling Claude API..."):
+        # Stage 1 — extractor (RAG: retrieve chunks, draft the process)
+        with st.spinner("Agent 1/2 — extracting draft from knowledge base..."):
             try:
-                process = extract_process(topic, n_chunks=n_chunks)
-                st.session_state.last_generated = process
+                draft = extract_process(topic, n_chunks=n_chunks)
+                st.session_state.last_generated = draft
+                st.session_state.last_validated = None
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"Extractor error: {e}")
                 st.session_state.last_generated = None
+                st.session_state.last_validated = None
+                draft = None
+
+        # Stage 2 — validator (review and improve the draft). If it fails we
+        # still have the draft: a degraded result beats no result.
+        if draft:
+            with st.spinner("Agent 2/2 — validating and improving the draft..."):
+                try:
+                    st.session_state.last_validated = validate_process(draft)
+                except Exception as e:
+                    st.warning(f"Validator failed ({e}) — showing unvalidated draft only.")
 
     if st.session_state.last_generated:
         from agents.skills_writer import process_to_yaml, save_skills_file
 
-        process = st.session_state.last_generated
-        yaml_str = process_to_yaml(process)
+        draft = st.session_state.last_generated
+        validated = st.session_state.last_validated
 
         st.divider()
-        conf = process.get("confidence", "low")
-        conf_color = {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(conf, "⚪")
-        st.write(f"**{process.get('display_name', process['process'])}** — Confidence: {conf_color} {conf.upper()}")
 
-        st.code(yaml_str, language="yaml")
+        conf_colors = {"high": "🟢", "medium": "🟡", "low": "🔴"}
 
-        if st.button("💾 Save Skills File"):
-            path = save_skills_file(process)
+        # Side-by-side: what the extractor drafted vs. what the validator
+        # shipped. Confidence can move in either direction — a drop means
+        # the validator found the draft was overselling its sourcing.
+        col_draft, col_final = st.columns(2)
+
+        with col_draft:
+            st.subheader("📝 Draft (extractor)")
+            conf = draft.get("confidence", "low")
+            st.write(f"Confidence: {conf_colors.get(conf, '⚪')} {conf.upper()}")
+            st.code(process_to_yaml(draft), language="yaml")
+
+        with col_final:
+            st.subheader("✅ Improved (validator)")
+            if validated:
+                conf = validated.get("confidence", "low")
+                st.write(f"Confidence: {conf_colors.get(conf, '⚪')} {conf.upper()}")
+                st.code(process_to_yaml(validated), language="yaml")
+            else:
+                st.info("Validation unavailable for this run.")
+
+        # The validator's review notes, pulled out of the YAML for visibility —
+        # this is the audit trail a human reads before trusting the file.
+        if validated and validated.get("validation_notes"):
+            with st.expander("🔍 What the validator checked and changed", expanded=True):
+                for note in validated["validation_notes"]:
+                    st.write(f"- {note}")
+
+        # Save the validated version when we have one; the draft otherwise.
+        final = validated or draft
+        label = "💾 Save Validated Skills File" if validated else "💾 Save Draft (unvalidated)"
+        if st.button(label):
+            path = save_skills_file(final)
             st.success(f"Saved to {path}")
             st.session_state.last_generated = None
+            st.session_state.last_validated = None
 
     # ── Saved skills library ──
     st.divider()

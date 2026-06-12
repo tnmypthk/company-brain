@@ -3,7 +3,7 @@ Company Brain — Streamlit dashboard.
 
 Four tabs:
   Ingest  — drag & drop PDF/DOCX files, Google Drive, Gmail, or Slack into ChromaDB
-  Query   — semantic search across everything stored
+  Query   — synthesized answers with citations, or raw semantic search
   Skills  — 2-agent pipeline (extractor → validator) producing process YAML files
   Stats   — what's in the DB right now
 """
@@ -157,41 +157,85 @@ with ingest_tab:
 # ── QUERY TAB ─────────────────────────────────────────────────────────────────
 with query_tab:
     st.header("Query Your Knowledge Base")
-    st.write("Ask anything. Results are ranked by semantic similarity — not keyword match.")
 
     query_text = st.text_input(
         "What do you want to know?",
         placeholder="e.g. how do we handle customer escalations?",
     )
 
-    col1, col2 = st.columns([1, 3])
-    n_results = col1.slider("Results to show", min_value=1, max_value=10, value=5)
+    # Two modes for the same retrieval:
+    #   Get Answer — RAG synthesis: chunks go to Claude, you get a cited answer
+    #   Raw chunks — Day 1 behavior: see exactly what semantic search returns
+    # Raw view stays first-class because it's the debugging tool — when an
+    # answer looks wrong, the first question is "what did retrieval feed it?"
+    mode = st.radio(
+        "Mode",
+        ["💬 Get Answer", "📄 Raw chunks"],
+        horizontal=True,
+        label_visibility="collapsed",
+    )
 
-    if query_text:
-        from storage.chroma import query
+    # Shared renderer for both views. expandable=False is for use INSIDE the
+    # answer view's "Show source chunks" expander — Streamlit doesn't allow
+    # nesting expanders, so there we render flat blocks instead.
+    def _render_chunks(results, expandable=True):
+        for i, r in enumerate(results, 1):
+            source = r["metadata"].get("source", "unknown")
+            chunk_idx = r["metadata"].get("chunk_index", "?")
+            distance = r["distance"]
 
-        with st.spinner("Searching..."):
-            results = query(query_text, n_results=n_results)
+            # Convert distance to a 0-100 relevance score for display.
+            # Cosine distance is 0 (identical) to 2 (opposite). We map to
+            # 100 (perfect) to 0 (unrelated) so it reads naturally.
+            relevance = max(0, int((1 - distance) * 100))
 
-        if not results:
-            st.warning("No results found. Try ingesting some documents first.")
-        else:
-            st.write(f"**{len(results)} results** for: *{query_text}*")
-            st.divider()
-
-            for i, r in enumerate(results, 1):
-                source = r["metadata"].get("source", "unknown")
-                chunk_idx = r["metadata"].get("chunk_index", "?")
-                distance = r["distance"]
-
-                # Convert distance to a 0-100 relevance score for display.
-                # Cosine distance is 0 (identical) to 2 (opposite). We map to
-                # 100 (perfect) to 0 (unrelated) so it reads naturally.
-                relevance = max(0, int((1 - distance) * 100))
-
-                with st.expander(f"Result {i} — {source} (chunk {chunk_idx}) — {relevance}% relevant"):
+            label = f"Result {i} — {source} (chunk {chunk_idx}) — {relevance}% relevant"
+            if expandable:
+                with st.expander(label):
                     st.progress(relevance)
                     st.write(r["text"])
+            else:
+                st.markdown(f"**{label}**")
+                st.progress(relevance)
+                st.write(r["text"])
+                st.divider()
+
+    if mode == "💬 Get Answer":
+        if query_text:
+            from agents.answerer import answer_question
+
+            with st.spinner("Retrieving chunks and synthesizing answer..."):
+                try:
+                    result = answer_question(query_text, n_chunks=8)
+                except Exception as e:
+                    st.error(f"Error: {e}")
+                    result = None
+
+            if result:
+                st.markdown(result["answer"])
+
+                if result["chunks"]:
+                    st.divider()
+                    with st.expander(f"📄 Show source chunks ({len(result['chunks'])} retrieved)"):
+                        _render_chunks(result["chunks"], expandable=False)
+
+    else:  # Raw chunks mode — unchanged Day 1-2 behavior
+        st.write("Results are ranked by semantic similarity — not keyword match.")
+        col1, col2 = st.columns([1, 3])
+        n_results = col1.slider("Results to show", min_value=1, max_value=10, value=5)
+
+        if query_text:
+            from storage.chroma import query
+
+            with st.spinner("Searching..."):
+                results = query(query_text, n_results=n_results)
+
+            if not results:
+                st.warning("No results found. Try ingesting some documents first.")
+            else:
+                st.write(f"**{len(results)} results** for: *{query_text}*")
+                st.divider()
+                _render_chunks(results)
 
 
 # ── SKILLS TAB ────────────────────────────────────────────────────────────────

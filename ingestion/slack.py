@@ -28,11 +28,11 @@ option B" is useless without knowing who said it, where, and when.
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta
 from typing import List
 
 from ingestion.chunker import Chunk, chunk_text
+from utils.config import get_secret
 
 
 def _get_client(token: str | None = None):
@@ -40,16 +40,18 @@ def _get_client(token: str | None = None):
     Build a Slack WebClient.
 
     Token resolution order: explicit argument (from the dashboard's token
-    field) → SLACK_BOT_TOKEN in .env. The dashboard passes the token through
-    rather than writing it to disk — tokens typed into a UI shouldn't be
-    silently persisted.
+    field) → SLACK_BOT_TOKEN from secrets/.env. The dashboard passes the token
+    through rather than writing it to disk — tokens typed into a UI shouldn't
+    be silently persisted. get_secret reads Streamlit Cloud secrets first,
+    then the local environment.
     """
     from slack_sdk import WebClient
 
-    token = token or os.getenv("SLACK_BOT_TOKEN")
+    token = token or get_secret("SLACK_BOT_TOKEN")
     if not token:
         raise EnvironmentError(
-            "No Slack token. Pass one in, or set SLACK_BOT_TOKEN in .env"
+            "No Slack token. Pass one in, set SLACK_BOT_TOKEN in .env locally, "
+            "or add it to the Streamlit Cloud secrets manager."
         )
     return WebClient(token=token)
 

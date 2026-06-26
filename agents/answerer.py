@@ -43,18 +43,18 @@ PROMPT DESIGN — why the citation rule lives in the SYSTEM prompt:
 
 from __future__ import annotations
 
-import os
-
-from dotenv import load_dotenv
-
-load_dotenv()
+from utils.config import get_secret
 
 
 def _get_client():
     import anthropic
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    # get_secret: Streamlit Cloud secrets first, then .env / environment.
+    api_key = get_secret("ANTHROPIC_API_KEY")
     if not api_key:
-        raise EnvironmentError("ANTHROPIC_API_KEY not set in .env")
+        raise EnvironmentError(
+            "ANTHROPIC_API_KEY not set. Add it to .env locally, or to the "
+            "Streamlit Cloud secrets manager when deployed."
+        )
     return anthropic.Anthropic(api_key=api_key)
 
 

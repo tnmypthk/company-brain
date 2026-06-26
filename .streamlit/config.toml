@@ -1,0 +1,10 @@
+# Streamlit app configuration — safe to commit (no secrets here).
+
+[theme]
+# Dark theme to match the dashboard's look.
+base = "dark"
+
+[server]
+# Allow large document uploads (default is 200MB; set explicitly per Day 6).
+# Value is in megabytes.
+maxUploadSize = 200

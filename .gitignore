@@ -1,6 +1,7 @@
 cb-env/
 .DS_Store
 .env
+.streamlit/secrets.toml
 token.json
 credentials.json
 data/chroma/

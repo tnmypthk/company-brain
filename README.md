@@ -76,9 +76,9 @@ There's also a CLI for headless use: `python ingest.py file doc.pdf`, `python in
 
 ## Screenshots
 
-| Ingest | Query | Stats |
-|---|---|---|
-| ![Ingest tab](assets/screenshots/ingest-tab.png) | ![Query tab](assets/screenshots/query-tab.png) | ![Stats tab](assets/screenshots/stats-tab.png) |
+| Ingest | Query | Skills | Stats |
+|---|---|---|---|
+| ![Ingest tab](assets/screenshots/ingest-tab.png) | ![Query tab](assets/screenshots/query-tab.png) | ![Skills tab](assets/screenshots/skills-tab.png) | ![Stats tab](assets/screenshots/stats-tab.png) |
 
 ## Tech stack
 

@@ -10,14 +10,200 @@ Four tabs:
 
 import streamlit as st
 
+from utils.config import get_secret, running_on_cloud
+
 st.set_page_config(
     page_title="Company Brain",
     page_icon="🧠",
     layout="wide",
 )
 
+# ── CUSTOM STYLING ─────────────────────────────────────────────────────────────
+# Pure presentation: a small CSS layer so the app reads as a product, not a
+# dev tool. Injected once via st.markdown(unsafe_allow_html=True). Every class
+# here is cosmetic — no behavior changes anywhere in this file.
+st.markdown(
+    """
+    <style>
+      /* Metric cards — subtle border + raised background */
+      div[data-testid="stMetric"] {
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 12px;
+          padding: 16px 18px;
+      }
+      div[data-testid="stMetric"] label { opacity: 0.7; }
+
+      /* Tab bar — more breathing room, rounded tabs, accent on active */
+      .stTabs [data-baseweb="tab-list"] { gap: 6px; }
+      .stTabs [data-baseweb="tab"] {
+          border-radius: 8px 8px 0 0;
+          padding: 8px 18px;
+      }
+      .stTabs [aria-selected="true"] {
+          background: rgba(107, 138, 253, 0.12);
+      }
+
+      /* Source-type badges (gmail=red, slack=purple, drive=blue, file=grey) */
+      .source-badge {
+          display: inline-block;
+          padding: 2px 10px;
+          border-radius: 999px;
+          font-size: 0.70rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: #fff;
+      }
+      .src-gmail { background: #d93025; }
+      .src-slack { background: #6b3fa0; }
+      .src-drive { background: #1a73e8; }
+      .src-file  { background: #5f6368; }
+
+      /* Confidence chips (high=green, medium=yellow, low=red) */
+      .confidence-chip {
+          display: inline-block;
+          padding: 2px 12px;
+          border-radius: 999px;
+          font-size: 0.70rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+      }
+      .conf-high   { background: rgba(46, 160, 67, 0.18);  color: #3fb950; }
+      .conf-medium { background: rgba(210, 153, 34, 0.18); color: #d29922; }
+      .conf-low    { background: rgba(218, 54, 51, 0.18);  color: #f85149; }
+
+      /* Source cards (Stats grid) */
+      .source-card {
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 12px;
+          padding: 14px 16px;
+          margin-bottom: 10px;
+          min-height: 96px;
+      }
+      .source-card .src-name {
+          font-weight: 600;
+          font-size: 0.95rem;
+          word-break: break-word;
+          margin-top: 6px;
+      }
+      .source-card .src-count { opacity: 0.6; font-size: 0.8rem; margin-top: 2px; }
+
+      /* Skill cards (Saved library) */
+      .skill-card {
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 12px;
+          padding: 14px 18px;
+          margin-bottom: 4px;
+      }
+      .skill-card .skill-name { font-size: 1.15rem; font-weight: 700; }
+      .skill-card .skill-owner { opacity: 0.75; font-size: 0.9rem; }
+      .skill-card .skill-date { font-size: 0.78rem; opacity: 0.5; margin-top: 4px; }
+
+      /* Answer card — subtle left-border accent. :has() targets only the
+         bordered container that wraps the synthesized answer (marked with an
+         .answer-accent sentinel), so other bordered containers are untouched. */
+      div[data-testid="stVerticalBlockBorderWrapper"]:has(.answer-accent) {
+          border-left: 4px solid #6b8afd;
+          background: rgba(107, 138, 253, 0.04);
+      }
+
+      /* Empty state */
+      .empty-state { text-align: center; padding: 44px 16px; }
+      .empty-state .es-title { font-size: 1.6rem; font-weight: 700; }
+      .empty-state .es-sub { opacity: 0.6; margin-top: 8px; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+# ── PRESENTATION HELPERS ───────────────────────────────────────────────────────
+import html as _html
+import os as _os
+
+# icon + CSS class per source type
+_SOURCE_META = {
+    "gmail": ("📧", "src-gmail"),
+    "slack": ("💬", "src-slack"),
+    "drive": ("📁", "src-drive"),
+    "file":  ("📄", "src-file"),
+}
+
+
+def classify_source(src: str):
+    """Return (type, clean_display_name) for a raw source string.
+
+    Ingestors prefix their sources: 'gmail:Subject', 'slack:channel',
+    'drive:name'. File uploads have no prefix — just a filename or full path —
+    so anything unprefixed is a file, and we strip the directory for display.
+    """
+    for kind in ("gmail", "slack", "drive"):
+        if src.startswith(kind + ":"):
+            name = src[len(kind) + 1:]
+            if kind == "slack":
+                name = "#" + name
+            return kind, name
+    return "file", _os.path.basename(src) or src
+
+
+def source_badge(kind: str) -> str:
+    _, cls = _SOURCE_META.get(kind, _SOURCE_META["file"])
+    return f'<span class="source-badge {cls}">{kind}</span>'
+
+
+def source_icon(kind: str) -> str:
+    icon, _ = _SOURCE_META.get(kind, _SOURCE_META["file"])
+    return icon
+
+
+def confidence_chip(conf: str) -> str:
+    conf = (conf or "low").lower()
+    cls = {"high": "conf-high", "medium": "conf-medium", "low": "conf-low"}.get(conf, "conf-low")
+    return f'<span class="confidence-chip {cls}">{_html.escape(conf)}</span>'
+
+
 st.title("🧠 Company Brain")
 st.caption("Ingest company knowledge. Query it with natural language.")
+
+
+# ── HERO METRICS ───────────────────────────────────────────────────────────────
+# Real numbers, computed at load: distinct sources + total chunks from
+# ChromaDB, and saved skills files from disk. (ChromaDB already loads every
+# run via the Stats tab, so this adds no extra startup cost.)
+from storage.chroma import collection_stats as _hero_stats, _get_collection as _hero_coll
+from agents.skills_writer import list_skills_files as _hero_skills
+
+_stats = _hero_stats()
+_total_chunks = _stats["total_chunks"]
+try:
+    _hero_metas = _hero_coll().get(include=["metadatas"])["metadatas"] if _total_chunks else []
+except Exception:
+    _hero_metas = []
+_distinct_sources = {m.get("source", "unknown") for m in _hero_metas}
+_skills_generated = len(_hero_skills())
+
+_h1, _h2, _h3 = st.columns(3)
+_h1.metric("Total Sources", len(_distinct_sources))
+_h2.metric("Total Chunks", _total_chunks)
+_h3.metric("Skills Generated", _skills_generated)
+
+# Empty state — first-run guidance pointing at the Ingest tab (just below).
+if _total_chunks == 0:
+    st.markdown(
+        """
+        <div class="empty-state">
+          <div class="es-title">🧠 No knowledge ingested yet</div>
+          <div class="es-sub">⬇️ &nbsp; Open the <b>📥 Ingest</b> tab below to add your first documents</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+st.write("")  # spacer above the tab bar
 
 ingest_tab, query_tab, skills_tab, stats_tab = st.tabs(["📥 Ingest", "🔍 Query", "🗂 Skills", "📊 Stats"])
 
@@ -56,10 +242,21 @@ with ingest_tab:
 
     st.divider()
 
-    # Google Drive section — shows setup instructions if credentials.json is missing
+    # Google Drive section.
+    # On a deployed server, file-based Google OAuth can't work (no browser to
+    # complete the consent flow, no credentials.json on disk) — so we detect
+    # the cloud and show a clear message instead of letting run_local_server()
+    # hang the request. Locally, we fall back to the existing setup flow.
     st.subheader("Or ingest from Google Drive")
     from pathlib import Path
-    if not Path("credentials.json").exists():
+    if running_on_cloud():
+        st.info(
+            "🔒 Google Drive ingestion needs interactive OAuth on a local "
+            "machine (a browser consent flow + `credentials.json` on disk), "
+            "neither of which exists on the hosted demo. Run Company Brain "
+            "locally to ingest from Drive. File upload and Slack work here."
+        )
+    elif not Path("credentials.json").exists():
         with st.expander("Setup required — click to see instructions"):
             st.markdown("""
 1. Go to [Google Cloud Console](https://console.cloud.google.com)
@@ -91,10 +288,16 @@ with ingest_tab:
 
     st.divider()
 
-    # Gmail section
+    # Gmail section — same cloud constraint as Drive (shared OAuth flow).
     st.subheader("Or ingest from Gmail")
     from pathlib import Path
-    if not Path("credentials.json").exists():
+    if running_on_cloud():
+        st.info(
+            "🔒 Gmail ingestion needs interactive OAuth on a local machine, "
+            "which isn't available on the hosted demo. Run Company Brain "
+            "locally to ingest from Gmail."
+        )
+    elif not Path("credentials.json").exists():
         st.info("Add credentials.json to enable Gmail ingestion.")
     else:
         col1, col2 = st.columns(2)
@@ -122,13 +325,12 @@ with ingest_tab:
     )
 
     # type="password" masks the token on screen. We pass it straight to the
-    # ingestor and never write it to disk; set SLACK_BOT_TOKEN in .env to
-    # skip typing it each time.
-    import os
+    # ingestor and never write it to disk; set SLACK_BOT_TOKEN in .env (local)
+    # or the Streamlit Cloud secrets manager to skip typing it each time.
     slack_token = st.text_input(
         "Bot token",
         type="password",
-        placeholder="xoxb-... (leave empty to use SLACK_BOT_TOKEN from .env)",
+        placeholder="xoxb-... (leave empty to use SLACK_BOT_TOKEN from secrets/.env)",
     )
     slack_channels = st.text_input(
         "Channel names (comma-separated)",
@@ -145,7 +347,7 @@ with ingest_tab:
             try:
                 chunks = ingest_slack(
                     channels,
-                    token=slack_token or os.getenv("SLACK_BOT_TOKEN"),
+                    token=slack_token or get_secret("SLACK_BOT_TOKEN"),
                     days=slack_days,
                 )
                 stored = store_chunks(chunks)
@@ -212,7 +414,12 @@ with query_tab:
                     result = None
 
             if result:
-                st.markdown(result["answer"])
+                # Styled card with a left-border accent. The .answer-accent
+                # sentinel lets the CSS target just this bordered container;
+                # the answer itself renders as normal markdown inside it.
+                with st.container(border=True):
+                    st.markdown('<div class="answer-accent"></div>', unsafe_allow_html=True)
+                    st.markdown(result["answer"])
 
                 if result["chunks"]:
                     st.divider()
@@ -349,10 +556,28 @@ with skills_tab:
         st.info("No skills files saved yet. Generate and save one above.")
     else:
         for skill in saved:
-            conf = skill["confidence"]
-            conf_color = {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(conf, "⚪")
-            with st.expander(f"{conf_color} {skill['display_name']} — owned by {skill['owner']}"):
-                st.caption(f"Generated: {skill['generated_at']}  |  File: {skill['filename']}")
+            name = _html.escape(str(skill["display_name"]))
+            owner = _html.escape(str(skill["owner"]))
+            generated = _html.escape(str(skill["generated_at"]))
+            filename = _html.escape(str(skill["filename"]))
+
+            # Styled header card: process name (bold/large) on the left,
+            # confidence chip + owner on the right, generated date small/grey.
+            st.markdown(
+                f"""
+                <div class="skill-card">
+                  <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+                    <span class="skill-name">{name}</span>
+                    <span style="white-space:nowrap;">{confidence_chip(skill["confidence"])}
+                      &nbsp; <span class="skill-owner">👤 {owner}</span></span>
+                  </div>
+                  <div class="skill-date">Generated {generated} · {filename}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            # Full YAML stays one click away (expand on click).
+            with st.expander("View full definition"):
                 content = skill["path"].read_text(encoding="utf-8")
                 st.code(content, language="yaml")
 
@@ -376,7 +601,15 @@ with stats_tab:
     collection = _get_collection()
 
     if stats["total_chunks"] == 0:
-        st.info("Nothing ingested yet. Go to the Ingest tab to add documents.")
+        st.markdown(
+            """
+            <div class="empty-state">
+              <div class="es-title">🧠 No knowledge ingested yet</div>
+              <div class="es-sub">⬆️ &nbsp; Use the <b>📥 Ingest</b> tab to add documents</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     else:
         # Fetch all metadata to build a per-source summary
         all_items = collection.get(include=["metadatas"])
@@ -385,5 +618,23 @@ with stats_tab:
             src = meta.get("source", "unknown")
             source_counts[src] = source_counts.get(src, 0) + 1
 
-        for src, count in sorted(source_counts.items(), key=lambda x: -x[1]):
-            st.write(f"- **{src}** — {count} chunk{'s' if count != 1 else ''}")
+        # Styled grid: each source is a card with a type icon + badge, the
+        # cleaned name (no full path), and a chunk-count line. Laid out 3-wide.
+        ordered = sorted(source_counts.items(), key=lambda x: -x[1])
+        per_row = 3
+        for i in range(0, len(ordered), per_row):
+            cols = st.columns(per_row)
+            for col, (src, count) in zip(cols, ordered[i:i + per_row]):
+                kind, clean_name = classify_source(src)
+                plural = "s" if count != 1 else ""
+                with col:
+                    st.markdown(
+                        f"""
+                        <div class="source-card">
+                          <div>{source_icon(kind)} &nbsp; {source_badge(kind)}</div>
+                          <div class="src-name">{_html.escape(clean_name)}</div>
+                          <div class="src-count">{count} chunk{plural}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )

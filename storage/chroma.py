@@ -15,6 +15,19 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List
 
+# ChromaDB needs sqlite3 >= 3.35, but some hosts (notably Streamlit Cloud) ship
+# an older system sqlite3 — which fails confusingly during client init. When
+# the modern pysqlite3 build is installed (Linux/Cloud, see requirements.txt),
+# swap it in for the stdlib sqlite3 BEFORE importing chromadb. On local dev
+# (macOS) pysqlite3 isn't installed, so this no-ops and the system sqlite3 is
+# used. Must run before `import chromadb`.
+try:
+    __import__("pysqlite3")
+    import sys as _sys
+    _sys.modules["sqlite3"] = _sys.modules.pop("pysqlite3")
+except ImportError:
+    pass
+
 import chromadb
 from chromadb.utils import embedding_functions
 

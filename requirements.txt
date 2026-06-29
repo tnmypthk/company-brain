@@ -13,6 +13,10 @@ sentence-transformers==5.1.2
 
 # Vector DB
 chromadb==1.5.9
+# Modern SQLite for hosts whose system sqlite3 is too old for ChromaDB
+# (e.g. Streamlit Cloud). Linux-only marker so local macOS installs skip it.
+# Intentionally unpinned — the right build depends on the host's glibc.
+pysqlite3-binary; platform_system == "Linux"
 
 # Document parsing
 PyPDF2==3.0.1

@@ -1,5 +1,7 @@
 # 🧠 Company Brain
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Streamlit-FF4B4B?logo=streamlit)](https://company-brain-s4eqiz2rymbfzkyinbkm9x.streamlit.app)
+
 **Ingest your company's scattered knowledge. Query it in plain English. Turn tribal knowledge into documented, validated processes.**
 
 Company Brain is a self-hosted RAG (Retrieval-Augmented Generation) system inspired by Y Combinator's [Request for Startups](https://www.ycombinator.com/rfs) theme of internal agents that actually know how your company works. Every company's operational knowledge — how refunds get approved, what to do when an alert fires, who owns which process — lives fragmented across Slack threads, email chains, Drive docs, and people's heads. Company Brain pulls all of it into one local vector database, answers questions against it with citations, and goes a step further than search: a two-agent Claude pipeline extracts *structured, validated process documentation* (YAML "skills files") from the raw knowledge, turning "ask Dave, he knows" into a reviewable artifact.

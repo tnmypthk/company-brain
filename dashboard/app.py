@@ -8,6 +8,15 @@ Four tabs:
   Stats   — what's in the DB right now
 """
 
+import sys
+from pathlib import Path
+
+# Put the repo root on sys.path so `utils`, `agents`, `ingestion`, `storage`
+# resolve when this file is run directly. Locally run_dashboard.sh sets
+# PYTHONPATH; on Streamlit Cloud nothing does, and only dashboard/ would be on
+# the path — so without this, the imports below fail with ModuleNotFoundError.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import streamlit as st
 
 from utils.config import get_config, get_secret, running_on_cloud

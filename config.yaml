@@ -1,0 +1,42 @@
+# Company Brain — central tuning config.
+#
+# Change models, chunk sizes, retrieval counts, and the vector store here —
+# no need to edit code. Loaded once at startup via utils/config.py:get_config().
+# (Secrets do NOT live here — those go in .env / Streamlit Cloud secrets.)
+
+# Claude model per agent. Use exact API model IDs (see agents/).
+models:
+  extractor: claude-sonnet-4-6   # drafts the process — cheap, structured output
+  validator: claude-opus-4-8     # critiques the draft — stronger reasoning
+  answerer:  claude-sonnet-4-6   # synthesizes cited answers
+
+# Max output tokens per agent call.
+max_tokens:
+  extractor: 4096
+  validator: 16000
+  answerer:  2048
+
+# Text chunking: words per chunk + overlap. Docs are denser than chat, so
+# they get larger chunks; email/Slack are short and bursty, so smaller ones.
+chunking:
+  document:        # PDF / DOCX / Google Drive
+    size: 500
+    overlap: 50
+  email:           # Gmail
+    size: 300
+    overlap: 30
+  slack:           # Slack transcripts
+    size: 300
+    overlap: 30
+
+# How many chunks to pull from the vector store.
+retrieval:
+  answer_chunks: 8    # Query → "Get Answer" mode
+  skills_chunks: 10   # Skills extractor (also the slider's default)
+  raw_results:   5    # Query → "Raw chunks" (also the slider's default)
+
+# Vector store (ChromaDB). Swappable behind storage/chroma.py.
+storage:
+  db_path:         data/chroma
+  collection_name: company_brain
+  embed_model:     all-MiniLM-L6-v2

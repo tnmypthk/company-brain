@@ -28,6 +28,11 @@ from pathlib import Path
 from typing import List
 
 from ingestion.chunker import Chunk, chunk_text
+from utils.config import get_config
+
+# Email chunk size/overlap come from config.yaml (chunking.email) — smaller
+# than documents because emails are short and focused.
+_EMAIL = get_config()["chunking"]["email"]
 
 # Gmail needs its own scope on top of (or instead of) Drive's scope.
 # We request both so a single token.json covers the full app.
@@ -177,7 +182,7 @@ def fetch_emails(days: int = 90, max_emails: int = 200, label: str = "INBOX") ->
     return emails
 
 
-def emails_to_chunks(emails: List[dict], chunk_size: int = 300, overlap: int = 30) -> List[Chunk]:
+def emails_to_chunks(emails: List[dict], chunk_size: int = _EMAIL["size"], overlap: int = _EMAIL["overlap"]) -> List[Chunk]:
     """
     Convert email dicts into chunks.
 

@@ -32,7 +32,10 @@ from datetime import datetime, timedelta
 from typing import List
 
 from ingestion.chunker import Chunk, chunk_text
-from utils.config import get_secret
+from utils.config import get_config, get_secret
+
+# Slack chunk size/overlap come from config.yaml (chunking.slack).
+_SLACK = get_config()["chunking"]["slack"]
 
 
 def _get_client(token: str | None = None):
@@ -177,8 +180,8 @@ def messages_to_chunks(
     messages: List[dict],
     channel_name: str,
     user_cache: dict,
-    chunk_size: int = 300,
-    overlap: int = 30,
+    chunk_size: int = _SLACK["size"],
+    overlap: int = _SLACK["overlap"],
 ) -> List[Chunk]:
     """
     Format a channel's messages into a transcript and chunk it.

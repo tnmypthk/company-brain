@@ -43,7 +43,10 @@ PROMPT DESIGN — why the citation rule lives in the SYSTEM prompt:
 
 from __future__ import annotations
 
-from utils.config import get_secret
+from utils.config import get_config, get_secret
+
+# Model, token, and retrieval defaults come from config.yaml — tune there.
+_CFG = get_config()
 
 
 def _get_client():
@@ -97,7 +100,7 @@ def _build_user_prompt(question: str, chunks: list[dict]) -> str:
 Question: {question}"""
 
 
-def answer_question(question: str, n_chunks: int = 8) -> dict:
+def answer_question(question: str, n_chunks: int = _CFG["retrieval"]["answer_chunks"]) -> dict:
     """
     Retrieve the top-N chunks and synthesize a cited answer.
 
@@ -105,10 +108,10 @@ def answer_question(question: str, n_chunks: int = 8) -> dict:
     UI can show the raw evidence under the answer. Trust in a RAG system comes
     from being able to check the synthesis against its inputs.
 
-    n_chunks=8: more than the chunk-view default of 5 because synthesis
-    tolerates marginal chunks better than a human scanning results does —
-    Claude can ignore an irrelevant chunk, a human reading 8 raw chunks
-    mostly sees noise.
+    n_chunks (config retrieval.answer_chunks, default 8): more than the
+    chunk-view default because synthesis tolerates marginal chunks better than
+    a human scanning results does — Claude can ignore an irrelevant chunk, a
+    human reading 8 raw chunks mostly sees noise.
     """
     from storage.chroma import query as chroma_query
 
@@ -123,10 +126,10 @@ def answer_question(question: str, n_chunks: int = 8) -> dict:
     client = _get_client()
 
     response = client.messages.create(
-        model="claude-sonnet-4-6",
+        model=_CFG["models"]["answerer"],
         # Prose answers are open-ended, unlike the extractor's bounded JSON —
-        # 2048 gives three full paragraphs plus sources with headroom.
-        max_tokens=2048,
+        # the config default (2048) gives ~3 paragraphs plus sources.
+        max_tokens=_CFG["max_tokens"]["answerer"],
         system=SYSTEM_PROMPT,
         messages=[
             {"role": "user", "content": _build_user_prompt(question, chunks)}

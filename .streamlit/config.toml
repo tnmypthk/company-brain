@@ -3,6 +3,10 @@
 [theme]
 # Dark theme to match the dashboard's look.
 base = "dark"
+# Accent for sliders, active tabs, and primary buttons. Matches the indigo
+# used by the source badges and the answer card so the whole UI is cohesive
+# (Streamlit's default primaryColor is a red #FF4B4B that clashed with them).
+primaryColor = "#6b8afd"
 
 [server]
 # Allow large document uploads (default is 200MB; set explicitly per Day 6).

@@ -50,7 +50,10 @@ import json
 from datetime import datetime
 from typing import Any
 
-from utils.config import get_secret
+from utils.config import get_config, get_secret
+
+# Model and token defaults come from config.yaml — tune there.
+_CFG = get_config()
 
 
 def _get_client():
@@ -171,8 +174,8 @@ def validate_process(process: dict[str, Any]) -> dict[str, Any]:
     draft = {k: v for k, v in process.items() if k != "generated_at"}
 
     response = client.messages.create(
-        model="claude-opus-4-8",
-        max_tokens=16000,
+        model=_CFG["models"]["validator"],
+        max_tokens=_CFG["max_tokens"]["validator"],
         # Adaptive thinking lets the model reason about the draft before
         # answering — critique benefits from deliberation more than the
         # extractor's mostly-mechanical restructuring does.

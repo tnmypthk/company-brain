@@ -19,10 +19,14 @@ import chromadb
 from chromadb.utils import embedding_functions
 
 from ingestion.chunker import Chunk
+from utils.config import get_config
 
-_DB_PATH = Path("data/chroma")
-_COLLECTION_NAME = "company_brain"
-_EMBED_MODEL = "all-MiniLM-L6-v2"
+# Vector-store settings come from config.yaml (storage:) so the DB location,
+# collection name, and embedding model can be changed without editing code.
+_storage_cfg = get_config()["storage"]
+_DB_PATH = Path(_storage_cfg["db_path"])
+_COLLECTION_NAME = _storage_cfg["collection_name"]
+_EMBED_MODEL = _storage_cfg["embed_model"]
 
 # Module-level singletons — one client, one collection per process.
 _client: chromadb.PersistentClient | None = None

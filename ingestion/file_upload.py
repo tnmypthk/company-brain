@@ -13,6 +13,10 @@ from pathlib import Path
 from typing import List
 
 from ingestion.chunker import Chunk, chunk_text
+from utils.config import get_config
+
+# Document chunk size/overlap come from config.yaml (chunking.document).
+_DOC = get_config()["chunking"]["document"]
 
 
 def _extract_pdf(path: Path) -> str:
@@ -35,7 +39,7 @@ def _extract_docx(path: Path) -> str:
     return "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
 
 
-def ingest_file(path: str | Path, chunk_size: int = 500, overlap: int = 50) -> List[Chunk]:
+def ingest_file(path: str | Path, chunk_size: int = _DOC["size"], overlap: int = _DOC["overlap"]) -> List[Chunk]:
     """
     Parse a PDF or DOCX file and return a list of overlapping text chunks.
 
@@ -58,7 +62,7 @@ def ingest_file(path: str | Path, chunk_size: int = 500, overlap: int = 50) -> L
     return chunk_text(text, source=str(path), chunk_size=chunk_size, overlap=overlap)
 
 
-def ingest_file_bytes(content: bytes, filename: str, chunk_size: int = 500, overlap: int = 50) -> List[Chunk]:
+def ingest_file_bytes(content: bytes, filename: str, chunk_size: int = _DOC["size"], overlap: int = _DOC["overlap"]) -> List[Chunk]:
     """
     Same as ingest_file but accepts raw bytes — useful for Streamlit's file_uploader
     which gives you bytes, not a path.

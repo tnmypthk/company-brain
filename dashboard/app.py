@@ -10,7 +10,10 @@ Four tabs:
 
 import streamlit as st
 
-from utils.config import get_secret, running_on_cloud
+from utils.config import get_config, get_secret, running_on_cloud
+
+# Retrieval defaults for the sliders/calls below come from config.yaml.
+_RETRIEVAL = get_config()["retrieval"]
 
 st.set_page_config(
     page_title="Company Brain",
@@ -408,7 +411,7 @@ with query_tab:
 
             with st.spinner("Retrieving chunks and synthesizing answer..."):
                 try:
-                    result = answer_question(query_text, n_chunks=8)
+                    result = answer_question(query_text, n_chunks=_RETRIEVAL["answer_chunks"])
                 except Exception as e:
                     st.error(f"Error: {e}")
                     result = None
@@ -429,7 +432,7 @@ with query_tab:
     else:  # Raw chunks mode — unchanged Day 1-2 behavior
         st.write("Results are ranked by semantic similarity — not keyword match.")
         col1, col2 = st.columns([1, 3])
-        n_results = col1.slider("Results to show", min_value=1, max_value=10, value=5)
+        n_results = col1.slider("Results to show", min_value=1, max_value=10, value=_RETRIEVAL["raw_results"])
 
         if query_text:
             from storage.chroma import query
@@ -459,7 +462,7 @@ with skills_tab:
     )
 
     col1, col2 = st.columns([1, 3])
-    n_chunks = col1.slider("Chunks to retrieve", min_value=3, max_value=15, value=10)
+    n_chunks = col1.slider("Chunks to retrieve", min_value=3, max_value=15, value=_RETRIEVAL["skills_chunks"])
 
     # Session state holds the last generated result so the Save button works
     # without re-running the expensive Claude API call.

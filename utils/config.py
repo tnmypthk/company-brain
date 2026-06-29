@@ -28,13 +28,34 @@ helper beats four subtly-different copies.
 
 from __future__ import annotations
 
+import functools
 import os
+from pathlib import Path
 
+import yaml
 from dotenv import load_dotenv
 
 # Load .env into the environment once, at import. Harmless on Streamlit Cloud
 # (no .env there) — it just does nothing and we fall through to st.secrets.
 load_dotenv()
+
+# config.yaml lives at the project root (one level up from utils/). Resolving
+# from __file__ means it's found regardless of the process's working directory.
+_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
+
+
+@functools.lru_cache(maxsize=1)
+def get_config() -> dict:
+    """
+    Load config.yaml once (cached) and return it as a dict.
+
+    Central place for non-secret tuning — models, chunk sizes, retrieval
+    counts, vector-store settings. Modules read their defaults from here so a
+    change means editing one YAML file, not hunting through code. Distinct
+    from get_secret(): this is for configuration, that is for credentials.
+    """
+    with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
 
 
 def get_secret(name: str, default: str | None = None) -> str | None:

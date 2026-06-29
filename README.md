@@ -39,7 +39,7 @@ flowchart LR
     A3 --> B
     A4 --> B
     B --> C
-    C -->|top-8 chunks| D --> G
+    C -->|top-N chunks| D --> G
     C -->|top-N chunks| E --> F --> H
 ```
 
@@ -74,6 +74,23 @@ There's also a CLI for headless use: `python ingest.py file doc.pdf`, `python in
 | `SLACK_BOT_TOKEN` | optional | Slack channel ingestion (`channels:read`, `channels:history`, `users:read`) |
 | `credentials.json` | optional | Google OAuth for Drive + Gmail ingestion |
 
+## Configuration
+
+Two kinds of settings, kept deliberately separate:
+
+- **Tunables** live in [`config.yaml`](config.yaml) — the Claude model per agent, chunk sizes/overlap per source, how many chunks to retrieve, and the embedding model / collection name. Change behavior here without touching code.
+- **Secrets** live in `.env` locally (see `.env.example`) or the Streamlit Cloud secrets manager — never in `config.yaml` or git.
+
+## Deploy to Streamlit Cloud
+
+The app is deployment-ready. On [Streamlit Community Cloud](https://share.streamlit.io):
+
+1. Point it at this repo and set **Python 3.11** in the app's Advanced settings.
+2. Paste your secrets into **Settings → Secrets** (same keys as `.env` — see `.streamlit/secrets.toml.example`).
+3. Deploy.
+
+The same code runs in both places: `get_secret()` reads Cloud secrets first, then falls back to `.env` locally. Google Drive/Gmail are **local-only** — their OAuth needs a browser and `credentials.json`, so those sections show a "run locally" notice on the hosted app, while file upload and Slack work fully. Note: ChromaDB data lives on local/ephemeral disk, so a hosted demo starts empty and won't persist across restarts — for a persistent deployment, point `storage/chroma.py` at a hosted vector store.
+
 ## Screenshots
 
 | Ingest | Query | Skills | Stats |
@@ -89,7 +106,7 @@ There's also a CLI for headless use: `python ingest.py file doc.pdf`, `python in
 | Embeddings | sentence-transformers `all-MiniLM-L6-v2` | Local + free; no API calls for ingestion or search |
 | UI | Streamlit | Whole dashboard is one Python file; ideal for fast iteration |
 | Ingestion | PyPDF2, python-docx, Google API client, slack_sdk | One module per source, all funneling into a shared chunker |
-| Config | python-dotenv | Secrets stay in `.env`, out of git |
+| Config | `config.yaml` + python-dotenv | Tunables (models, chunking, retrieval) in `config.yaml`; secrets in `.env` / Streamlit secrets |
 
 ## How the 2-agent pipeline works
 

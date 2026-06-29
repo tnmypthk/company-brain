@@ -29,7 +29,10 @@ import json
 from datetime import datetime
 from typing import Any
 
-from utils.config import get_secret
+from utils.config import get_config, get_secret
+
+# Model, token, and retrieval defaults come from config.yaml — tune there.
+_CFG = get_config()
 
 
 def _get_client():
@@ -144,7 +147,7 @@ determine from the chunks, make a reasonable inference and note it is inferred.
 """
 
 
-def extract_process(topic: str, n_chunks: int = 10) -> dict[str, Any]:
+def extract_process(topic: str, n_chunks: int = _CFG["retrieval"]["skills_chunks"]) -> dict[str, Any]:
     """
     Main entry point: retrieve relevant chunks and extract a structured process.
 
@@ -178,10 +181,10 @@ def extract_process(topic: str, n_chunks: int = 10) -> dict[str, Any]:
     # The messages API is Claude's modern interface. It supports multi-turn
     # conversations, system prompts, and is what all current Claude models use.
     response = client.messages.create(
-        model="claude-sonnet-4-6",
-        # 1024 was too tight — a 7-step process with detailed edge cases runs
-        # ~800+ tokens, and hitting max_tokens truncates the JSON mid-object.
-        max_tokens=4096,
+        model=_CFG["models"]["extractor"],
+        # max_tokens in config.yaml — 1024 was too tight (a 7-step process with
+        # detailed edge cases runs ~800+ tokens and truncates the JSON).
+        max_tokens=_CFG["max_tokens"]["extractor"],
         # API-enforced output contract — see EXTRACTED_PROCESS_SCHEMA above.
         output_config={
             "format": {

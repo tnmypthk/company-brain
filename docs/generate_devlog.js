@@ -178,21 +178,22 @@ const doc = new Document({
       }),
       new Paragraph({
         spacing: { before: 0, after: 400 },
-        children: [new TextRun({ text: "Stack: Python 3.9 • CrewAI • Claude API • ChromaDB • Streamlit • Google APIs", size: 20, font: "Arial", color: "888888" })],
+        children: [new TextRun({ text: "Stack: Python 3.9 • Claude API (Sonnet 4.6 + Opus 4.8) • ChromaDB • Streamlit • Slack & Google APIs", size: 20, font: "Arial", color: "888888" })],
       }),
       divider(),
 
       // ── PROJECT OVERVIEW ──────────────────────────────────────────────────
       h1("Project Overview"),
-      p("Company Brain is a portfolio project inspired by YC's RFS. The goal is to ingest company knowledge from Slack, Gmail, and Google Drive, extract structured process knowledge using the Claude API and CrewAI, store it in ChromaDB, and present it via a Streamlit dashboard."),
+      p("Company Brain is a portfolio project inspired by YC's RFS. The goal is to ingest company knowledge from Slack, Gmail, Google Drive, and uploaded files, extract structured process knowledge using a multi-agent Claude API pipeline, store it in ChromaDB, and present it via a Streamlit dashboard. (The original plan named CrewAI for the agent layer; in practice the agents are plain Claude API calls, so that dependency was dropped — see Day 6.)"),
       new Paragraph({ spacing: { before: 120, after: 60 }, children: [] }),
       infoTable([
         ["Inspiration", "YC Request for Startups — knowledge management category"],
-        ["Goal", "Ship a working demo in 4 weeks, learn by building"],
-        ["Week 1", "Ingestion pipeline: Drive, Gmail, file upload, ChromaDB, Streamlit UI"],
-        ["Week 2", "CrewAI agents + Claude API for RAG-based answers"],
-        ["Week 3", "Streamlit dashboard polish, source filtering, session memory"],
-        ["Week 4", "Slack ingestion, final demo prep, portfolio write-up"],
+        ["Goal", "Ship a working demo, learn by building"],
+        ["Days 1–2", "Ingestion pipeline: Drive, Gmail, file upload, ChromaDB, Streamlit UI"],
+        ["Day 3", "Claude API skills extractor + YAML skills files"],
+        ["Day 4", "Slack ingestion + validator agent (2-agent pipeline)"],
+        ["Day 5", "Synthesized answers with source citations"],
+        ["Day 6 / 6.5", "Streamlit Cloud deployment, central config.yaml, UI polish"],
       ]),
       new Paragraph({ spacing: { before: 120, after: 60 }, children: [] }),
       divider(),
@@ -392,13 +393,150 @@ const doc = new Document({
 
       divider(),
 
+      // ══════════════════════════════════════════════════════════════════════
+      // DAY 3
+      // ══════════════════════════════════════════════════════════════════════
+      h1("Day 3 — Claude API Skills File Generator"),
+      p("Date: 2026-06-12", { color: "888888", italics: true }),
+      p("Goal: Add the generation half of RAG. Days 1–2 built retrieval (finding relevant chunks); Day 3 sends those chunks to the Claude API and reasons over them — turning raw search into structured, reusable process documentation."),
+
+      h2("1. agents/extractor.py — Chunks to Structured Process"),
+      p("The extractor retrieves the top-N chunks for a topic, sends them to Claude, and gets back a structured process definition: process name, owner, trigger, ordered steps, edge cases, sources, and a confidence rating."),
+      h3("Why structured JSON, not prose?"),
+      p("The next step writes a YAML skills file. If Claude returns a paragraph, you have to parse it — fragile. If it returns JSON matching a known schema, you can validate it and write it directly. This 'structured output' pattern is one of the most important prompt-engineering techniques."),
+      h3("Why split the system and user prompt?"),
+      p("The system prompt defines Claude's role and the output contract — it's stable across every call, so Anthropic caches it. The user prompt carries the per-request payload (the topic and the retrieved chunks). Keeping the contract in the system prompt means it isn't restated, and isn't competing with thousands of context tokens for attention."),
+      h3("Why claude-sonnet-4-6?"),
+      p("Sonnet balances capability and cost well for structured extraction. The harder reasoning job (critiquing the draft) gets a stronger model on Day 4."),
+
+      h2("2. agents/skills_writer.py — Dict to YAML"),
+      p("Converts the extractor's dict into a human-readable YAML file in skills/. Keys are written in a deliberate reading order — what → who → why → how → exceptions → provenance — rather than yaml.dump's default alphabetical order, which would put 'confidence' before 'steps' and read wrong."),
+      p("YAML over JSON because a skills file is meant to be reviewed, corrected, and committed by a human. YAML reads like a document; JSON's brackets and escaping make manual editing error-prone."),
+
+      h2("3. Skills Tab in the Dashboard"),
+      p("A topic input, a generate button, a YAML preview, and a save button. The catch: Streamlit re-runs the whole script on every interaction, so the generated result is held in st.session_state — without it, clicking 'Save' would lose the result from the 'Generate' click and re-trigger the expensive API call."),
+
+      h2("Day 3 — What Was Tested"),
+      bullet("extract_process() — generated a structured skills file from ingested chunks with sensible steps and confidence"),
+      bullet("skills_writer — dict serialized to ordered YAML and saved to skills/"),
+      bullet("Skills tab — generate → preview → save round-trip works without re-calling the API on save"),
+
+      divider(),
+
+      // ══════════════════════════════════════════════════════════════════════
+      // DAY 4
+      // ══════════════════════════════════════════════════════════════════════
+      h1("Day 4 — Slack Ingestion & the 2-Agent Pipeline"),
+      p("Date: 2026-06-12", { color: "888888", italics: true }),
+      p("Goal: Add Slack as a fourth ingestion source, and add a second Claude agent that reviews the extractor's output — turning a single generation step into a generator-critic pipeline."),
+
+      h2("1. ingestion/slack.py — Channel Transcripts"),
+      p("Pulls messages from named channels via slack_sdk, resolves author IDs to names, and stores each channel as one chronological transcript tagged 'slack:{channel}'."),
+      h3("Why a transcript, not one chunk per message?"),
+      p("Slack messages are tiny — often under ten words ('sounds good!', '+1'). A chunk per message would fill ChromaDB with thousands of near-meaningless embeddings. Concatenating a channel's messages chronologically and chunking the transcript keeps a question and its answer in the same chunk, which is what makes retrieval useful."),
+      h3("One users_list call, cached"),
+      p("Messages reference authors by ID (U0123ABC). Calling users_info per message would be one API call per author per message. A single paginated users_list up front maps every ID to a display name."),
+      h3("Public-channel scope fallback"),
+      p("Listing private channels needs the optional groups:read scope. Rather than requiring it, the code asks for public + private and, if Slack rejects it with missing_scope, retries public-only — so the minimal three-scope token works out of the box."),
+
+      h2("2. agents/validator.py — The Critic"),
+      p("A second Claude agent (Opus 4.8) takes the extractor's draft and returns an improved version with a validation_notes field: are the steps actually executable? Are the edge cases realistic? Is the owner identifiable? Is the confidence honest?"),
+      h3("Why two agents instead of one bigger prompt?"),
+      p("A model reviewing its own output in the same context tends to defend its mistakes — the reasoning that produced a vague step is still in context. A critic with a fresh context containing only the draft reads it the way a new employee would: 'could I actually follow this?' This is the generator-critic (reflection) pattern."),
+      h3("Cheap generator, strong critic"),
+      p("Extraction is mostly mechanical restructuring, so it runs on Sonnet. Critique benefits from stronger reasoning, so it runs on Opus 4.8. Splitting the models is the classic cost/quality trade."),
+
+      h2("3. Structured Outputs — Contract in the API, Not the Prompt"),
+      p("Day 3's extractor asked for JSON in the prompt ('respond with ONLY valid JSON') and parsed the result. That broke the first time Claude wrapped its JSON in markdown fences. The fix: output_config.format with a JSON schema, which makes the API guarantee schema-valid output. The contract moves from a prompt suggestion to an enforced constraint — no fence-stripping, no missing-key checks. Both agents were upgraded to use it."),
+      p("A second latent bug surfaced at the same time: the extractor's max_tokens was 1024, just above the failed response's size — a slightly longer process would have truncated the JSON mid-object. Raised to 4096."),
+
+      h2("4. Dashboard — Side-by-Side Review"),
+      p("The Skills tab now runs extractor → validator and shows the draft and the improved version side by side, with the validator's notes in an expander. Seeing what changed — and whether confidence went up or down — is how a human builds trust in the pipeline. A confidence drop is a feature: it means the validator caught the draft overselling its sourcing."),
+
+      h2("Day 4 — What Was Tested"),
+      bullet("Slack ingestion — channel transcript stored, public-scope fallback verified after a missing_scope error"),
+      bullet("validate_process() — live run demoted a weak draft's confidence from high to low and rewrote vague steps"),
+      bullet("Structured outputs — markdown-fence parse failure eliminated; extractor re-ran cleanly on the topic that broke it"),
+
+      divider(),
+
+      // ══════════════════════════════════════════════════════════════════════
+      // DAY 5
+      // ══════════════════════════════════════════════════════════════════════
+      h1("Day 5 — Synthesized Answers with Citations"),
+      p("Date: 2026-06-12", { color: "888888", italics: true }),
+      p("Goal: Upgrade the Query tab from raw chunk retrieval to a synthesized, cited answer — the third Claude agent, and the feature that makes the product feel like an assistant rather than a search box."),
+
+      h2("1. agents/answerer.py — Cited RAG Q&A"),
+      p("Retrieves the top-8 chunks, sends them to Claude as 'Company Brain', and returns a prose answer grounded only in the provided context, with sources cited by name. Returns the chunks too, so the UI can show the evidence under the answer."),
+      h3("Why the citation rule lives in the SYSTEM prompt, not the user prompt"),
+      p("This was the day's key lesson, and it has four reasons:"),
+      bullet("Attention. In RAG the user turn is ~95% pasted context — eight chunks of text with the question at the end. An instruction buried in that wall competes with thousands of tokens and gets lost in the middle. The system prompt is read with priority every time.", "Authority:"),
+      bullet("'Cite your sources' is part of who the agent is — it applies to every question. The user prompt is the per-request payload. Permanent behavior belongs in the system prompt.", "Contract vs payload:"),
+      bullet("Retrieved chunks are untrusted text. An ingested email could contain 'ignore previous instructions.' Instructions in the system channel are far harder for user-channel content to override.", "Injection resistance:"),
+      bullet("The system prompt is byte-identical across queries, so it forms a stable, cacheable prefix.", "Caching:"),
+
+      h2("2. Query Tab — Two Modes"),
+      p("A toggle: 'Get Answer' (synthesis with a 'show source chunks' expander) and 'Raw chunks' (the original Day 1 view). Raw view stays first-class because it's the debugging tool — when an answer looks wrong, the first question is 'what did retrieval actually feed the model?'"),
+      h3("The most important test: honest refusal"),
+      p("Retrieval always returns the nearest chunks — there's no threshold below which it returns nothing. Asked 'what about football?' against a knowledge base with no football content, the model was handed eight unrelated chunks and still said the knowledge base doesn't cover it, listing what IS covered, rather than hallucinating. A RAG system that confidently makes things up on out-of-scope questions is worse than no system; this refusal is the trust foundation."),
+
+      h2("3. README"),
+      p("Wrote the project README with YC RFS framing, a Mermaid architecture diagram (sources → chunker → ChromaDB → three agents → outputs), run instructions, a tech-stack table, and a roadmap."),
+
+      h2("Day 5 — What Was Tested"),
+      bullet("answer_question() — cited answer synthesized live from Slack-sourced chunks with inline source names"),
+      bullet("Mode toggle — Get Answer and Raw chunks both render; source-chunks expander works"),
+      bullet("Out-of-scope refusal — model declined to answer a topic absent from the knowledge base"),
+
+      divider(),
+
+      // ══════════════════════════════════════════════════════════════════════
+      // DAY 6 + 6.5
+      // ══════════════════════════════════════════════════════════════════════
+      h1("Day 6 & 6.5 — Deployment, Config & UI Polish"),
+      p("Date: 2026-06-26", { color: "888888", italics: true }),
+      p("Goal: Make the app deployable to Streamlit Cloud, move tunable settings out of code, and polish the UI from a dev tool into something that reads like a product."),
+
+      h2("1. Secrets — st.secrets vs os.getenv"),
+      p("Local dev keeps secrets in a .env file read by python-dotenv into the environment (os.getenv). Streamlit Cloud has no .env — it exposes secrets only via st.secrets. Code using just one of these works in one place and silently fails in the other (and the CLI has no Streamlit runtime at all)."),
+      p("utils/config.py:get_secret() resolves both: Streamlit secrets first, then the environment. One helper, used everywhere, so all four agents/ingestors share the same logic."),
+      h3("Why Google OAuth is fundamentally different on a server"),
+      p("Anthropic and Slack keys are static bearer tokens — a string you attach to a request, easy to move into any secrets manager. Google OAuth is an interaction model: flow.run_local_server() opens a browser for consent and writes token.json to disk. A headless server has no browser and an ephemeral disk, and the OAuth client is registered as a 'Desktop app' (localhost redirect). So Drive/Gmail are gated to local-only with a clear notice, rather than hanging the request."),
+
+      h2("2. Deployment Config"),
+      bullet(".streamlit/config.toml — dark theme, 200MB upload limit"),
+      bullet(".streamlit/secrets.toml.example — committable template; the real secrets.toml is gitignored"),
+      bullet("requirements.txt — every dependency pinned for reproducible builds"),
+      bullet("crewai removed — it was never imported (the agents are plain Claude API calls) and its 0.5.0 pin caps at Python 3.9, which would break the Cloud build"),
+
+      h2("3. config.yaml — Central Tunables"),
+      p("Models per agent, max_tokens, chunk sizes/overlap per source, retrieval counts, and the vector-store settings were hardcoded and scattered across files. They now live in one config.yaml, loaded once via get_config(). Tuning a model or a chunk size is a one-line YAML edit, not a hunt through code. Secrets deliberately stay out of it — those are credentials, not configuration."),
+
+      h2("4. UI Polish (Day 6.5)"),
+      bullet("A CSS layer: bordered metric cards, cleaner tabs, source-type badges (gmail/slack/drive/file), confidence chips (green/yellow/red)"),
+      bullet("A hero row of live metrics: Total Sources, Total Chunks, Skills Generated"),
+      bullet("Stats tab — a source grid with type icons, cleaned names, and count badges"),
+      bullet("Skills library — styled cards with confidence chip, owner, and date"),
+      bullet("Query — the synthesized answer in a left-accented card"),
+      bullet("Empty states when the knowledge base has no chunks"),
+      bullet("A unified indigo accent (primaryColor) so sliders, tabs, and buttons match the badges instead of Streamlit's default red"),
+
+      h2("Day 6 / 6.5 — What Was Tested"),
+      bullet("get_secret() — resolves from .env locally and falls through correctly when st.secrets is absent; CLI import path intact"),
+      bullet("config.yaml — values verified flowing into agents, ingestion, storage, and the dashboard"),
+      bullet("App runs end-to-end via Streamlit's AppTest with no exceptions; deployed-server path shows the Google local-only notice"),
+
+      divider(),
+
       // ── RUNNING THE PROJECT ───────────────────────────────────────────────
       h1("Running the Project"),
       h2("Prerequisites"),
       bullet("Python 3.9, virtualenv at cb-env/"),
-      bullet("credentials.json from Google Cloud Console (OAuth Desktop app)"),
-      bullet("Gmail API + Google Drive API enabled in the Cloud project"),
-      bullet("tpsnowflake1611@gmail.com added as test user in OAuth consent screen"),
+      bullet("ANTHROPIC_API_KEY in .env (or Streamlit Cloud secrets) — required for all three agents"),
+      bullet("credentials.json from Google Cloud Console (OAuth Desktop app) — optional, for Drive/Gmail (local only)"),
+      bullet("SLACK_BOT_TOKEN with channels:read, channels:history, users:read — optional, for Slack ingestion"),
+      bullet("Tunables (models, chunk sizes, retrieval counts) live in config.yaml — no code changes to adjust them"),
 
       h2("Daily Startup"),
       ...codeBlock([
@@ -416,27 +554,41 @@ const doc = new Document({
 
       h2("Key Files"),
       infoTable([
-        ["ingestion/chunker.py", "Word-based overlapping text chunker (500w, 50w overlap)"],
+        ["config.yaml", "Central tunables — models, chunk sizes, retrieval counts, vector store"],
+        ["utils/config.py", "get_secret() + get_config() + running_on_cloud() — secrets and settings"],
+        ["ingestion/chunker.py", "Word-based overlapping text chunker"],
         ["ingestion/file_upload.py", "PDF + DOCX parser — path and bytes variants"],
-        ["ingestion/drive.py", "Google Drive OAuth2 connector"],
-        ["ingestion/gmail.py", "Gmail connector — MIME parsing, reply stripping"],
+        ["ingestion/drive.py", "Google Drive OAuth2 connector (local only)"],
+        ["ingestion/gmail.py", "Gmail connector — MIME parsing, reply stripping (local only)"],
+        ["ingestion/slack.py", "Slack connector — channel transcripts via slack_sdk"],
         ["ingestion/csv_ingest.py", "CSV row-to-prose converter for structured data"],
         ["storage/chroma.py", "ChromaDB wrapper — upsert, cosine query, stats"],
-        ["utils/db_utils.py", "DB management: list, delete, nuke sources"],
-        ["dashboard/app.py", "Streamlit UI — Ingest / Query / Stats tabs"],
+        ["agents/extractor.py", "Claude agent — chunks to structured process JSON"],
+        ["agents/validator.py", "Claude agent (Opus) — reviews and improves the draft"],
+        ["agents/answerer.py", "Claude agent — cited Q&A synthesis"],
+        ["agents/skills_writer.py", "Writes process dicts to YAML skills files"],
+        ["dashboard/app.py", "Streamlit UI — Ingest / Query / Skills / Stats tabs"],
         ["ingest.py", "CLI entry point for all ingestion commands"],
         ["run_dashboard.sh", "Launch script — sets PYTHONPATH correctly"],
       ]),
 
       divider(),
 
-      // ── NEXT ──────────────────────────────────────────────────────────────
-      h1("Up Next — Day 3"),
-      p("Wire the Claude API into the Query tab to transform raw chunk retrieval into actual answers (RAG generation step)."),
-      bullet("utils/claude_rag.py — take top-5 chunks + user question, send to Claude API, return a synthesized answer"),
-      bullet("Update Query tab — show Claude's answer above the raw chunks"),
-      bullet("Add source citations in the answer — 'According to [drive:onboarding_doc], ...'"),
-      p("This is the step that makes the product feel like a real AI assistant rather than a search engine."),
+      // ── WEEK 1 COMPLETE ───────────────────────────────────────────────────
+      h1("Week 1 Complete — What Shipped & What's Next"),
+      p("The original four-week plan compressed into Week 1. The app is feature-complete, deployable, and documented."),
+      h2("Shipped"),
+      bullet("Four ingestion sources — file upload, Google Drive, Gmail, Slack — all funneling into one chunker and ChromaDB"),
+      bullet("Synthesized Q&A with source citations, plus a raw-chunk debugging view"),
+      bullet("A 2-agent skills pipeline (extractor → validator) producing reviewed YAML process docs"),
+      bullet("API-enforced structured outputs on both extraction agents"),
+      bullet("Streamlit Cloud deployment readiness, central config.yaml, and a polished product UI"),
+      h2("What's Next"),
+      bullet("Thread-aware Slack ingestion (conversations_replies)"),
+      bullet("Re-ranking retrieved chunks before synthesis (cross-encoder or LLM re-rank)"),
+      bullet("A hosted vector store so a deployed instance persists across restarts"),
+      bullet("Authentication + per-tenant isolation — the path toward a small SaaS"),
+      p("As a portfolio piece, it's in a shippable state: ingest from four sources, ask a question and get a cited answer, generate a process doc and watch a second agent critique it."),
 
       new Paragraph({ spacing: { before: 240, after: 0 }, children: [] }),
     ],
